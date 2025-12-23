@@ -3,5 +3,5 @@
     <Platform Name="x64" />
     <Platform Name="x86" />
   </Configurations>
-  <Project Path="sha256sum-windows/sha256sum-windows.vcxproj" />
+  <Project Path="sha256sum-windows/sha256sum-windows.vcxproj" Id="342ab3ac-7a1e-4592-bf8f-82c31183fb75" />
 </Solution>
