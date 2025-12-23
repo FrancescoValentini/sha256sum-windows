@@ -3,6 +3,7 @@
 #include "sha256sum-windows.h"
 #include "Sha256Calculator.h"
 #include <Windows.h>
+#include <fstream> 
 
 static void setupArguments(argparse::ArgumentParser& program) {
     // FILE (positional)
@@ -71,7 +72,9 @@ static void formatOutput(const std::vector<BYTE>& result,
 /// EXIT_OK (0) if the operation succeeds.
 /// EXIT_ERROR (2) if an exception is thrown during the calculation.
 /// </returns>
-static int sha256Calc(HANDLE hInput, const std::string& name) {
+static int sha256Calc(HANDLE hInput,
+    const std::string& name,
+    std::vector<BYTE>* outHash = nullptr) {
     try {
         sha256::Sha256Calculator hash;
         std::vector<BYTE> buffer(BUFFER_SIZE);
@@ -83,12 +86,18 @@ static int sha256Calc(HANDLE hInput, const std::string& name) {
         }
 
         const std::vector<BYTE>& result = hash.doFinal();
-        formatOutput(result, name);
+
+        if (outHash) {
+            *outHash = result;
+        }
+        else {
+            formatOutput(result, name);
+        }
+
         return EXIT_OK;
     }
-    catch (std::exception const& e) {
-        std::cerr << "Exception: " << e.what() << std::endl;
-
+    catch (const std::exception& e) {
+        std::cerr << "Exception: " << e.what() << "\n";
         return EXIT_ERROR;
     }
 }
@@ -155,6 +164,110 @@ static int calculate(std::vector<std::string>& files) {
     return EXIT_OK;
 }
 
+/// <summary>
+/// Converts a byte vector to a hexadecimal string
+/// </summary>
+/// <param name="hash">The byte vector</param>
+/// <returns>Hexadecimal string</returns>
+static std::string toHex(const std::vector<BYTE>& hash) {
+    std::ostringstream oss;
+    for (BYTE b : hash) {
+        oss << std::hex << std::setw(2) << std::setfill('0') << (int)b;
+    }
+    return oss.str();
+}
+
+/// <summary>
+/// Parses the calculation output format and checks the file hashes
+/// </summary>
+/// <param name="files">Vector of files</param>
+/// <param name="ignoreMissing">don't fail or report status for missing files</param>
+/// <param name="quiet">don't print OK for each successfully verified file</param>
+/// <param name="status">don't output anything, status code shows success</param>
+/// <returns>
+/// EXIT_OK (0) if all files are processed and verified successfully, 
+/// EXIT_EXIT_MISMATCH (1) if At least one checksum does NOT match
+/// EXIT_ERROR (2) if any error occurs during file processing or hashing.
+/// </returns>
+static int checkFiles(const std::vector<std::string>& files, bool ignoreMissing, bool quiet, bool status) {
+    std::istream* in = &std::cin;
+    std::ifstream file;
+
+    bool allMatches = true;
+    int errors = 0;
+    int unredable = 0;
+
+    if (!files.empty() && files[0] != "-") {
+        file.open(files[0]);
+        if (!file) {
+            std::cerr << "Unable to open checksum file: " << files[0] << "\n";
+            return EXIT_ERROR;
+        }
+        in = &file;
+    }
+
+    std::string line;
+    int rc = EXIT_OK;
+
+    while (std::getline(*in, line)) {
+        if (line.empty())
+            continue;
+
+        std::istringstream iss(line);
+        std::string expectedHex;
+        std::string filename;
+
+        iss >> expectedHex >> filename;
+
+        if (expectedHex.empty() || filename.empty()) {
+            std::cerr << "Invalid format: " << line << "\n";
+            return EXIT_ERROR;
+        }
+
+        HANDLE hInput = openInput(filename);
+        if (hInput == INVALID_HANDLE_VALUE) {
+            allMatches = false;
+            errors++;
+            unredable++;
+            if (!status && !ignoreMissing) std::cout << filename << ": FAILED\n";
+            continue;
+        }
+
+        std::vector<BYTE> computed;
+        int hashRc = sha256Calc(hInput, filename, &computed);
+
+        if (filename != "-") {
+            CloseHandle(hInput);
+        }
+
+        if (hashRc != EXIT_OK) {
+            allMatches = false;
+            errors++;
+            if (!status) std::cout << filename << ": FAILED\n";
+            continue;
+        }
+
+        if (toHex(computed) == expectedHex) {
+            if(!quiet && !status) std::cout << filename << ": OK\n";
+        }
+        else {
+            allMatches = false;
+            errors++;
+            if (!status) std::cout << filename << ": FAILED\n";
+        }
+    }
+
+    if (errors>0) {
+        if (!status) std::cerr<< "sha256sum-windows: WARNING: " << errors << " computed checksum did NOT match" << "\n";
+        if (unredable > 0 && (!status && !ignoreMissing)) {
+           std::cerr << "sha256sum-windows: WARNING: " << unredable << " listed file could not be read" << "\n";
+        }
+        return EXIT_MISMATCH;
+    }
+
+    return EXIT_OK;
+}
+
 
 int main(int argc, char* argv[]) {
     argparse::ArgumentParser program(PGM_NAME);
@@ -170,15 +283,14 @@ int main(int argc, char* argv[]) {
     }
 
     bool check = program.get<bool>("--check");
+    bool ignoreMissing = program.get<bool>("--ignore-missing");
+    bool quiet = program.get<bool>("--quiet");
+    bool status = program.get<bool>("--status");
     std::vector<std::string> files = program.get<std::vector<std::string>>("files");
 
     if (!check) {
         return calculate(files);
     }
-    else {
-        std::cerr << "--check not yet implemented\n";
-        return EXIT_FAILURE;
-    }
 
-    return EXIT_OK;
+    return checkFiles(files, ignoreMissing, quiet, status);
 }

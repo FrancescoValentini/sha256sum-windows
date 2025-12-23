@@ -1,6 +1,6 @@
 #pragma once
 
-#define PGM_NAME "sha256sum"
+#define PGM_NAME "sha256sum-windows"
 #define PGM_VERS "1.0.0"
 
 // Exit codes
