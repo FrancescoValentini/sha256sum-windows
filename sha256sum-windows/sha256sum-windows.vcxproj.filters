@@ -26,5 +26,8 @@
     <ClInclude Include="Sha256Calculator.h">
       <Filter>File di intestazione</Filter>
     </ClInclude>
+    <ClInclude Include="sha256sum-windows.h">
+      <Filter>File di intestazione</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
