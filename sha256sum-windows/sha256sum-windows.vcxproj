@@ -127,7 +127,11 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="Sha256Calculator.cpp" />
     <ClCompile Include="sha256sum-windows.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Sha256Calculator.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
