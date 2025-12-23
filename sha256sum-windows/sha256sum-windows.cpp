@@ -1,6 +1,8 @@
 #include <iostream>
 #include <argparse/argparse.hpp>
 #include "sha256sum-windows.h"
+#include "Sha256Calculator.h"
+#include <Windows.h>
 
 static void setupArguments(argparse::ArgumentParser& program) {
     // FILE (positional)
@@ -32,27 +34,150 @@ static void setupArguments(argparse::ArgumentParser& program) {
         .implicit_value(true);
 }
 
+/// <summary>
+/// Converts a Windows-style file path to a Unix-style path by replacing backslashes ('\') with slashes ('/').
+/// This ensures compatibility with systems that use Unix style file paths.
+/// </summary>
+/// <param name="path">the path to convert</param>
+/// <returns>A string with the converted Unix-style file path.</returns>
+static std::string toUnixPath(const std::string& path) {
+    std::string out = path;
+    std::replace(out.begin(), out.end(), '\\', '/');
+    return out;
+}
+
+/// <summary>
+/// Prints the resulting SHA-256 hash in hexadecimal format and appends the file path
+/// This function is used to output the hash and the file name in a readable format,
+/// compatible with the sha256sum unix utility
+/// </summary>
+/// <param name="result">file cheksum</param>
+/// <param name="name">file name</param>
+static void formatOutput(const std::vector<BYTE>& result,
+    const std::string& name) {
+    for (BYTE byte : result)
+        printf("%02x", byte);
+
+    printf("  %s\n", toUnixPath(name).c_str());
+}
+
+/// <summary>
+/// Calculates the SHA-256 hash for a given file or input stream.
+/// After computation, it calls formatOutput to display the hash in the desired format.
+/// </summary>
+/// <param name="hInput">A file handle to the input file (can be standard input).</param>
+/// <param name="name">The path of the file</param>
+/// <returns>
+/// EXIT_OK (0) if the operation succeeds.
+/// EXIT_ERROR (2) if an exception is thrown during the calculation.
+/// </returns>
+static int sha256Calc(HANDLE hInput, const std::string& name) {
+    try {
+        sha256::Sha256Calculator hash;
+        std::vector<BYTE> buffer(BUFFER_SIZE);
+
+        DWORD bytesRead = 0;
+        while (ReadFile(hInput, buffer.data(), BUFFER_SIZE, &bytesRead, nullptr) &&
+            bytesRead > 0) {
+            hash.update(buffer.data(), bytesRead);
+        }
+
+        const std::vector<BYTE>& result = hash.doFinal();
+        formatOutput(result, name);
+        return EXIT_OK;
+    }
+    catch (std::exception const& e) {
+        std::cerr << "Exception: " << e.what() << std::endl;
+
+        return EXIT_ERROR;
+    }
+}
+
+/// <summary>
+/// Opens a file for reading. If the file is empty or "-" (standard input), it opens stdin instead.
+/// </summary>
+/// <param name="file">The path of the file to open, or "-" to indicate standard input.</param>
+/// <returns>
+/// A handle to the opened file (or stdin) on success, INVALID_HANDLE_VALUE if an error occurs.
+/// </returns>
+static HANDLE openInput(const std::string& file) {
+    // STDIN
+    if (file == "-" || file.empty()) {
+        return GetStdHandle(STD_INPUT_HANDLE);
+    }
+    // File
+    return CreateFileA(
+        file.c_str(),
+        GENERIC_READ,
+        FILE_SHARE_READ,
+        nullptr,
+        OPEN_EXISTING,
+        FILE_FLAG_SEQUENTIAL_SCAN,
+        nullptr
+    );
+}
+
+/// <summary>
+/// The main function that handles the processing of one or more files. 
+/// </summary>
+/// <param name="files">A vector of strings representing the file names to process.</param>
+/// <returns>
+/// EXIT_OK (0) if all files are processed successfully, 
+/// EXIT_ERROR (2) if any error occurs during file processing or hashing.
+/// </returns>
+static int calculate(std::vector<std::string>& files) {
+    int rc = 0;
+
+    if (files.empty()) {
+        HANDLE hInput = GetStdHandle(STD_INPUT_HANDLE);
+        return sha256Calc(hInput, "-"); // Use '-' as the file name for stdin
+    }
+
+    for (const auto& file : files) {
+        HANDLE hInput = openInput(file);
+
+        if (hInput == INVALID_HANDLE_VALUE) {
+            std::cerr << "Unable to open: " << file << "\n";
+            return EXIT_ERROR;
+        }
+
+        rc = sha256Calc(hInput, file);
+
+        if (rc != EXIT_OK) {
+            return rc;
+        }
+
+        if (file != "-") {
+            CloseHandle(hInput);
+        }
+    }
+
+    return EXIT_OK;
+}
+
+
 int main(int argc, char* argv[]) {
     argparse::ArgumentParser program(PGM_NAME);
-
     setupArguments(program);
 
     try {
         program.parse_args(argc, argv);
     }
     catch (const std::exception& err) {
-        std::cerr << err.what() << std::endl;
+        std::cerr << err.what() << "\n";
         std::cerr << program;
-        return 1;
+        return EXIT_FAILURE;
     }
 
     bool check = program.get<bool>("--check");
     std::vector<std::string> files = program.get<std::vector<std::string>>("files");
 
-    std::cout << "check: " << check << "\n";
-    std::cout << "files:\n";
-    for (const auto& f : files) {
-        std::cout << "- " << f << "\n";
+    if (!check) {
+        return calculate(files);
+    }
+    else {
+        std::cerr << "--check not yet implemented\n";
+        return EXIT_FAILURE;
     }
 
     return EXIT_OK;
