@@ -1,9 +1,9 @@
+#pragma once
+
 #include "Sha256Calculator.h"
 #include <bcrypt.h>
 #include <stdexcept>
-#include <ntstatus.h>
 #include <string>
-
 
 #pragma comment(lib, "bcrypt.lib")
 
@@ -23,7 +23,7 @@ namespace sha256 {
         DWORD cbData = 0;
         DWORD hashObjectSize = 0;
         DWORD hashSize = 0;
-        NTSTATUS status = STATUS_SUCCESS;
+        NTSTATUS status = 0L;
 
         // Opens an algorithm provider for the SHA-256 hashing algorithm.
         status = BCryptOpenAlgorithmProvider(

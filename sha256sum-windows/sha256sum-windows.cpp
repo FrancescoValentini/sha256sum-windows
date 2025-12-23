@@ -270,7 +270,7 @@ static int checkFiles(const std::vector<std::string>& files, bool ignoreMissing,
 
 
 int main(int argc, char* argv[]) {
-    argparse::ArgumentParser program(PGM_NAME);
+    argparse::ArgumentParser program(PGM_NAME, PGM_VERS);
     setupArguments(program);
 
     try {
